@@ -44,6 +44,7 @@
 #define REDIS_CONFIGLINE_MAX    1024
 #define REDIS_EXPIRELOOKUPS_PER_CRON    10 /* lookup 10 expires per loop */
 #define REDIS_MAX_WRITE_PER_EVENT (1024*64)
+#define REDIS_SHARED_SELECT_CMDS 10
 #define REDIS_SHARED_INTEGERS 10000
 #define REDIS_SHARED_BULKHDR_LEN 32
 #define REDIS_MAX_LOGMSG_LEN    1024 /* Default maximum length of syslog messages */
@@ -366,10 +367,9 @@ struct sharedObjectsStruct {
     *colon, *nullbulk, *nullmultibulk, *queued,
     *emptymultibulk, *wrongtypeerr, *nokeyerr, *syntaxerr, *sameobjecterr,
     *outofrangeerr, *noscripterr, *loadingerr, *slowscripterr, *bgsaveerr,
-    *roslaveerr, *oomerr, *plus, *select0, *select1, *select2, *select3,
-    *select4, *select5, *select6, *select7, *select8, *select9,
-    *messagebulk, *pmessagebulk, *subscribebulk, *unsubscribebulk,
-    *psubscribebulk, *punsubscribebulk, *del, *rpop, *lpop,
+    *roslaveerr, *oomerr, *plus, *messagebulk, *pmessagebulk, *subscribebulk,
+    *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *rpop, *lpop,
+    *select[REDIS_SHARED_SELECT_CMDS],
     *integers[REDIS_SHARED_INTEGERS],
     *mbulkhdr[REDIS_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */
     *bulkhdr[REDIS_SHARED_BULKHDR_LEN];  /* "$<value>\r\n" */
@@ -590,6 +590,7 @@ struct redisServer {
     char *assert_file;
     int assert_line;
     int bug_report_start; /* True if bug report header was already logged. */
+    int watchdog_period;  /* Software watchdog period in ms. 0 = off */
 };
 
 typedef struct pubsubPattern {
@@ -683,7 +684,7 @@ extern dictType setDictType;
 extern dictType zsetDictType;
 extern dictType dbDictType;
 extern double R_Zero, R_PosInf, R_NegInf, R_Nan;
-dictType hashDictType;
+extern dictType hashDictType;
 
 /*-----------------------------------------------------------------------------
  * Functions prototypes
@@ -693,6 +694,7 @@ dictType hashDictType;
 long long ustime(void);
 long long mstime(void);
 void getRandomHexChars(char *p, unsigned int len);
+uint64_t crc64(const unsigned char *s, uint64_t l);
 
 /* networking.c -- Networking and Client related operations */
 redisClient *createClient(int fd);
@@ -734,6 +736,7 @@ void asyncCloseClientOnOutputBufferLimitReached(redisClient *c);
 int getClientLimitClassByName(char *name);
 char *getClientLimitClassName(int class);
 void flushSlavesOutputBuffers(void);
+void disconnectSlaves(void);
 
 #ifdef __GNUC__
 void addReplyErrorFormat(redisClient *c, const char *fmt, ...)
@@ -809,9 +812,9 @@ int equalStringObjects(robj *a, robj *b);
 unsigned long estimateObjectIdleTime(robj *o);
 
 /* Synchronous I/O with timeout */
-int syncWrite(int fd, char *ptr, ssize_t size, int timeout);
-int syncRead(int fd, char *ptr, ssize_t size, int timeout);
-int syncReadLine(int fd, char *ptr, ssize_t size, int timeout);
+ssize_t syncWrite(int fd, char *ptr, ssize_t size, long long timeout);
+ssize_t syncRead(int fd, char *ptr, ssize_t size, long long timeout);
+ssize_t syncReadLine(int fd, char *ptr, ssize_t size, long long timeout);
 
 /* Replication */
 void replicationFeedSlaves(list *slaves, int dictid, robj **argv, int argc);
@@ -869,6 +872,7 @@ void alsoPropagate(struct redisCommand *cmd, int dbid, robj **argv, int argc, in
 int prepareForShutdown();
 void redisLog(int level, const char *fmt, ...);
 void redisLogRaw(int level, const char *msg);
+void redisLogFromHandler(int level, const char *msg);
 void usage();
 void updateDictResizePolicy(void);
 int htNeedsResize(dict *dict);
@@ -1109,4 +1113,7 @@ void bugReportStart(void);
 void redisLogObjectDebugInfo(robj *o);
 void sigsegvHandler(int sig, siginfo_t *info, void *secret);
 sds genRedisInfoString(char *section);
+void enableWatchdog(int period);
+void disableWatchdog(void);
+void watchdogScheduleSignal(int period);
 #endif

@@ -29,6 +29,7 @@ set ::all_tests {
     integration/replication
     integration/replication-2
     integration/replication-3
+    integration/replication-4
     integration/aof
     integration/rdb
     integration/convert-zipmap-hash-on-load
@@ -38,6 +39,7 @@ set ::all_tests {
     unit/maxmemory
     unit/introspection
     unit/obuf-limits
+    unit/dump
 }
 # Index to the next test to run in the ::all_tests list.
 set ::next_test 0
